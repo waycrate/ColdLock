@@ -1,10 +1,10 @@
 use chrono::Local;
 use iced::keyboard::key;
-use iced::widget::{column, container, image, text, text_input, Image, Stack};
+use iced::widget::{Image, Stack, column, container, image, text, text_input};
 use iced::window::Id;
 use iced::{
-    keyboard, Alignment, Background, Color, Element, Event, Length, Subscription, Task as Command,
-    Theme,
+    Alignment, Background, Color, Element, Event, Length, Subscription, Task as Command, Theme,
+    keyboard,
 };
 use pam::Client;
 use std::sync::LazyLock;
