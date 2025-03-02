@@ -11,6 +11,6 @@ iced = { version = "0.13", default-features = false, features = [
 	"advanced",
 	"image",
 ] }
-iced_sessionlock = { version = "0.11.0-rc5", default-features = false }
+iced_sessionlock = { version = "0.13.5", default-features = false }
 uzers = "0.12.1"
-chrono = "0.4.38"
+chrono = "0.4.40"
