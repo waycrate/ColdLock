@@ -14,6 +14,13 @@ use iced_sessionlock::to_session_message;
 
 use iced_sessionlock::build_pattern::application;
 
+pub fn run() -> Result<(), iced_sessionlock::Error> {
+    application(Lock::update, Lock::view)
+        .theme(Lock::theme)
+        .subscription(Lock::subscription)
+        .run_with(Lock::new)
+}
+
 pub const IMAGE_A: &[u8] = include_bytes!("../assets/wallpaper2.jpeg");
 pub const IMAGE_B: &[u8] = include_bytes!("../assets/wallpaper1.jpeg");
 pub const ACCOUNT: &[u8] = include_bytes!("../assets/account.png");
@@ -37,6 +44,7 @@ pub enum Message {
     NextPressed,
     Step(StepMessage),
     EnterEvent(Event),
+    UnLock,
 }
 
 impl Lock {
