@@ -7,10 +7,10 @@ edition = "2024"
 pam = { package = "pam-f", version = "0.8.2", default-features = false, features = [
 	"client",
 ] }
-iced = { version = "0.13", default-features = false, features = [
+iced = { version = "0.14", default-features = false, features = [
 	"advanced",
 	"image",
 ] }
-iced_sessionlock = { version = "0.13.5", default-features = false }
+iced_sessionlock = { version = "0.14.2", default-features = false }
 uzers = "0.12.1"
 chrono = "0.4.40"

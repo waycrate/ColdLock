@@ -18,7 +18,7 @@ const IMAGE_A: &[u8] = include_bytes!("../assets/wallpaper2.jpeg");
 const IMAGE_B: &[u8] = include_bytes!("../assets/wallpaper1.jpeg");
 const ACCOUNT: &[u8] = include_bytes!("../assets/account.png");
 
-static INPUT_ID: LazyLock<text_input::Id> = LazyLock::new(text_input::Id::unique);
+static INPUT_ID: LazyLock<iced::widget::Id> = LazyLock::new(iced::widget::Id::unique);
 
 static IMAGE_A_HANDLE: LazyLock<image::Handle> =
     LazyLock::new(|| image::Handle::from_bytes(IMAGE_A));
@@ -27,10 +27,10 @@ static IMAGE_B_HANDLE: LazyLock<image::Handle> =
 static ACCOUNT_DEFAULT_HANDLE: LazyLock<image::Handle> =
     LazyLock::new(|| image::Handle::from_bytes(ACCOUNT));
 fn main() -> Result<(), iced_sessionlock::Error> {
-    application(Lock::update, Lock::view)
+    application(|| Lock::new(), Lock::update, Lock::view)
         .theme(Lock::theme)
         .subscription(Lock::subscription)
-        .run_with(Lock::new)
+        .run()
 }
 
 struct Lock {
@@ -67,7 +67,7 @@ impl Lock {
         match message {
             Message::NextPressed => {
                 self.steps.advance();
-                text_input::focus(INPUT_ID.clone())
+                iced::widget::operation::focus(INPUT_ID.clone())
             }
 
             Message::EnterEvent(event) => match event {
@@ -87,7 +87,7 @@ impl Lock {
         }
     }
 
-    fn view(&self, _window: Id) -> Element<Message> {
+    fn view(&'_ self, _window: Id) -> Element<'_, Message> {
         let Lock { steps, .. } = self;
 
         column![steps.view().map(Message::Step)].into()
@@ -136,7 +136,7 @@ impl AuthSteps {
         self.steps[self.current].update(msg)
     }
 
-    fn view(&self) -> Element<StepMessage> {
+    fn view(&'_ self) -> Element<'_, StepMessage> {
         self.steps[self.current].view()
     }
 
@@ -230,7 +230,7 @@ impl<'a> AuthStep {
         }
     }
 
-    fn view(&self) -> Element<StepMessage> {
+    fn view(&'_ self) -> Element<'_, StepMessage> {
         match self {
             AuthStep::Welcome {
                 user_name,
@@ -245,7 +245,7 @@ impl<'a> AuthStep {
         }
     }
 
-    fn welcome(user_name: &str, user_icon: image::Handle) -> Element<StepMessage> {
+    fn welcome(user_name: &'_ str, user_icon: image::Handle) -> Element<'_, StepMessage> {
         let image = Image::new(IMAGE_B_HANDLE.clone())
             .width(Length::Fill)
             .height(Length::Fill)
@@ -268,12 +268,12 @@ impl<'a> AuthStep {
                     ..Default::default()
                 })
                 .size(35),
-            iced::widget::Space::with_height(70),
+            iced::widget::Space::new().height(70),
             Image::new(user_icon)
                 .width(Length::Fixed(120.))
                 .height(Length::Fixed(120.)),
             text(format!("Welcome {}", user_name)).size(35),
-            iced::widget::Space::with_height(30),
+            iced::widget::Space::new().height(30),
             text("Press Enter to unlock").size(22)
         ]
         .padding(220)
