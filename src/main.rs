@@ -1,4 +1,5 @@
 use chrono::{Local, Timelike};
+use clap::Parser;
 use iced::keyboard::key;
 use iced::widget::{Image, Stack, column, container, image, text, text_input};
 use iced::window::Id;
@@ -26,8 +27,27 @@ static IMAGE_B_HANDLE: LazyLock<image::Handle> =
     LazyLock::new(|| image::Handle::from_bytes(IMAGE_B));
 static ACCOUNT_DEFAULT_HANDLE: LazyLock<image::Handle> =
     LazyLock::new(|| image::Handle::from_bytes(ACCOUNT));
+
+/// ColdLock — a Wayland session locker.
+#[derive(clap::Parser)]
+#[command(name = "coldlock", version, about)]
+struct Args {
+    /// PAM service to authenticate against (must have a config in /etc/pam.d).
+    #[arg(long, default_value = "coldlock")]
+    pam: String,
+}
+
 fn main() -> Result<(), iced_sessionlock::Error> {
-    application(Lock::new, Lock::update, Lock::view)
+    let args = Args::parse();
+    let service: &'static str = Box::leak(args.pam.into_boxed_str());
+
+    if !std::path::Path::new(&format!("/etc/pam.d/{service}")).exists() {
+        eprintln!("coldlock: PAM service '{service}' has no config in /etc/pam.d.");
+        eprintln!("Refusing to lock.");
+        std::process::exit(1);
+    }
+
+    application(move || Lock::new(service), Lock::update, Lock::view)
         .theme(Lock::theme)
         .subscription(Lock::subscription)
         .run()
@@ -48,10 +68,10 @@ enum Message {
 }
 
 impl Lock {
-    fn new() -> (Self, Command<Message>) {
+    fn new(service: &'static str) -> (Self, Command<Message>) {
         (
             Self {
-                steps: AuthSteps::new(),
+                steps: AuthSteps::new(service),
                 aligned: false,
             },
             Command::none(),
@@ -113,7 +133,7 @@ struct AuthSteps {
 }
 
 impl AuthSteps {
-    fn new() -> AuthSteps {
+    fn new(service: &'static str) -> AuthSteps {
         let user = get_user_by_uid(get_current_uid()).unwrap();
         let user_name = user.name().to_string_lossy().to_string().clone();
         let icon_path = format!("/var/lib/AccountsService/icons/{user_name}");
@@ -138,6 +158,7 @@ impl AuthSteps {
                     name: user_name.clone(),
                     password: String::new(),
                     auth_error: String::new(),
+                    service,
                 },
             ],
             current: 0,
@@ -173,6 +194,7 @@ enum AuthStep {
         name: String,
         password: String,
         auth_error: String,
+        service: &'static str,
     },
 }
 
@@ -211,16 +233,17 @@ impl<'a> AuthStep {
                 if let AuthStep::Auth {
                     name,
                     password,
-                    auth_error: _auth_error,
+                    service,
                     ..
                 } = self
                 {
                     let name = name.clone();
                     let password = password.clone();
+                    let service = *service;
                     return Command::perform(
                         async move {
-                            let mut client = Client::with_password("system-auth")
-                                .expect("Failed to init PAM client.");
+                            let mut client =
+                                Client::with_password(service).expect("Failed to init PAM client.");
                             client.conversation_mut().set_credentials(&name, &password);
                             client.authenticate()
                         },
@@ -253,6 +276,7 @@ impl<'a> AuthStep {
                 password,
                 auth_error,
                 icon_handle,
+                service: _,
             } => Self::auth(name, password, auth_error, icon_handle.clone()),
         }
     }

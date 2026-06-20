@@ -23,6 +23,6 @@ in {
   config = mkIf cfg.enable {
     environment.systemPackages = [cfg.package];
 
-    security.pam.services.system-auth = {};
+    security.pam.services.coldlock = {};
   };
 }
