@@ -1,4 +1,4 @@
-use chrono::Local;
+use chrono::{Local, Timelike};
 use iced::keyboard::key;
 use iced::widget::{Image, Stack, column, container, image, text, text_input};
 use iced::window::Id;
@@ -27,7 +27,7 @@ static IMAGE_B_HANDLE: LazyLock<image::Handle> =
 static ACCOUNT_DEFAULT_HANDLE: LazyLock<image::Handle> =
     LazyLock::new(|| image::Handle::from_bytes(ACCOUNT));
 fn main() -> Result<(), iced_sessionlock::Error> {
-    application(|| Lock::new(), Lock::update, Lock::view)
+    application(Lock::new, Lock::update, Lock::view)
         .theme(Lock::theme)
         .subscription(Lock::subscription)
         .run()
@@ -35,6 +35,7 @@ fn main() -> Result<(), iced_sessionlock::Error> {
 
 struct Lock {
     steps: AuthSteps,
+    aligned: bool,
 }
 
 #[to_session_message]
@@ -43,6 +44,7 @@ enum Message {
     NextPressed,
     Step(StepMessage),
     EnterEvent(Event),
+    Tick,
 }
 
 impl Lock {
@@ -50,6 +52,7 @@ impl Lock {
         (
             Self {
                 steps: AuthSteps::new(),
+                aligned: false,
             },
             Command::none(),
         )
@@ -60,7 +63,11 @@ impl Lock {
     }
 
     fn subscription(&self) -> Subscription<Message> {
-        Subscription::batch(vec![iced::event::listen().map(Message::EnterEvent)])
+        let period = if self.aligned { 60 } else { 1 };
+        Subscription::batch(vec![
+            iced::event::listen().map(Message::EnterEvent),
+            iced::time::every(std::time::Duration::from_secs(period)).map(|_| Message::Tick),
+        ])
     }
 
     fn update(&mut self, message: Message) -> Command<Message> {
@@ -82,6 +89,11 @@ impl Lock {
             },
 
             Message::UnLock => Command::done(message),
+
+            Message::Tick => {
+                self.aligned = Local::now().second() == 0;
+                Command::none()
+            }
 
             Message::Step(step_msg) => self.steps.update(step_msg),
         }
