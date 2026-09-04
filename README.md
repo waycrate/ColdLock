@@ -1,6 +1,6 @@
 # ColdLock
 
-<b>ColdLock</b> is a wayland session lock screen built using `iced_sessionlock`. 
+<b>ColdLock</b> is a Wayland session lock screen built using `iced_exwlshell`.
 
 ## View
 
