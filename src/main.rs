@@ -13,9 +13,9 @@ use uzers::{get_current_uid, get_user_by_uid};
 use iced_exwlshell::sessionlock::application;
 use iced_exwlshell::to_sessionlock_message;
 
-const IMAGE_A: &[u8] = include_bytes!("../assets/wallpaper2.jpeg");
-const IMAGE_B: &[u8] = include_bytes!("../assets/wallpaper1.jpeg");
-const ACCOUNT: &[u8] = include_bytes!("../assets/account.png");
+const IMAGE_A: &[u8] = include_bytes!("../assets/app/wallpaper2.jpeg");
+const IMAGE_B: &[u8] = include_bytes!("../assets/app/wallpaper1.jpeg");
+const ACCOUNT: &[u8] = include_bytes!("../assets/app/account.png");
 
 static INPUT_ID: LazyLock<iced::widget::Id> = LazyLock::new(iced::widget::Id::unique);
 

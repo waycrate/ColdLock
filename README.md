@@ -4,9 +4,9 @@
 
 ## View
 
-![img.png](/images/img1.jpeg)
+![img.png](/assets/examples/img1.jpeg)
 
-![img_1.png](/images/img2.jpeg)
+![img_1.png](/assets/examples/img2.jpeg)
 
 ## Installation
 
