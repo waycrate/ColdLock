@@ -2,18 +2,16 @@ use chrono::{Local, Timelike};
 use clap::Parser;
 use iced::keyboard::key;
 use iced::widget::{Image, Stack, column, container, image, text, text_input};
-use iced::window::Id;
 use iced::{
     Alignment, Background, Color, Element, Event, Length, Subscription, Task as Command, Theme,
     keyboard,
 };
-use pam::Client;
+use pam_unix::Client;
 use std::sync::LazyLock;
 use uzers::{get_current_uid, get_user_by_uid};
 
-use iced_sessionlock::to_session_message;
-
-use iced_sessionlock::build_pattern::application;
+use iced_exwlshell::sessionlock::application;
+use iced_exwlshell::to_sessionlock_message;
 
 const IMAGE_A: &[u8] = include_bytes!("../assets/wallpaper2.jpeg");
 const IMAGE_B: &[u8] = include_bytes!("../assets/wallpaper1.jpeg");
@@ -37,7 +35,7 @@ struct Args {
     pam: String,
 }
 
-fn main() -> Result<(), iced_sessionlock::Error> {
+fn main() -> Result<(), iced_exwlshell::Error> {
     let args = Args::parse();
     let service: &'static str = Box::leak(args.pam.into_boxed_str());
 
@@ -58,13 +56,14 @@ struct Lock {
     aligned: bool,
 }
 
-#[to_session_message]
+#[to_sessionlock_message]
 #[derive(Debug, Clone)]
 enum Message {
     NextPressed,
     Step(StepMessage),
     EnterEvent(Event),
     Tick,
+    UnLock,
 }
 
 impl Lock {
@@ -108,7 +107,7 @@ impl Lock {
                 _ => Command::none(),
             },
 
-            Message::UnLock => Command::done(message),
+            Message::UnLock => iced::exit(),
 
             Message::Tick => {
                 self.aligned = Local::now().second() == 0;
@@ -119,7 +118,7 @@ impl Lock {
         }
     }
 
-    fn view(&'_ self, _window: Id) -> Element<'_, Message> {
+    fn view(&'_ self) -> Element<'_, Message> {
         let Lock { steps, .. } = self;
 
         column![steps.view().map(Message::Step)].into()
@@ -286,7 +285,7 @@ impl<'a> AuthStep {
             .width(Length::Fill)
             .height(Length::Fill)
             .content_fit(iced::ContentFit::Cover)
-            .opacity(10.0);
+            .opacity(10.0_f32);
 
         let now = Local::now();
         let day = now.format("%A, %B %e").to_string();
