@@ -2,3 +2,8 @@
 /result
 .idea
 .direnv
+
+sway.conf
+
+!README.md
+*.md
