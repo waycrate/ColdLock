@@ -1,0 +1,26 @@
+name: CI
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Build
+            command: cargo build --locked
+          - name: Clippy
+            command: cargo clippy --locked -- -D warnings
+          - name: Check formatting
+            command: cargo fmt --all -- --check
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+      - name: ${{ matrix.name }}
+        run: nix develop --command ${{ matrix.command }}
