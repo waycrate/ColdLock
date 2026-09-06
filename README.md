@@ -4,9 +4,9 @@
 
 ## View
 
-![img.png](/assets/examples/img1.jpeg)
+![img1.png](/assets/examples/img1.png)
 
-![img_1.png](/assets/examples/img2.jpeg)
+![img_1.png](/assets/examples/img2.png)
 
 ## Installation
 
@@ -40,8 +40,21 @@ After importing you should be able to use it in your configuration.nix file:
 }
 ```
 
+## Other distros
+
+Build and install ColdLock:
+
+```sh
+git clone https://github.com/waycrate/ColdLock.git
+cd ColdLock
+cargo build --release
+sudo install -Dm755 target/release/coldlock /usr/local/bin/coldlock
+sudo install -Dm644 pam/coldlock /etc/pam.d/coldlock
+```
+
+The bundled PAM config uses your distro's `/etc/pam.d/login` service.
+Run `coldlock` from your Wayland session to lock the screen.
+
 ## Contributing
 
 Contributions are welcome! Feel free to open issues or submit pull requests to help improve ColdLock.
-
-
