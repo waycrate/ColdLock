@@ -1,13 +1,17 @@
+mod layout;
+
 use chrono::{Local, Timelike};
 use clap::Parser;
 use iced::keyboard::key;
-use iced::widget::{Image, Stack, column, container, image, text, text_input};
+use iced::widget::text::Wrapping;
+use iced::widget::{Image, Space, Stack, column, container, image, responsive, text, text_input};
 use iced::{
     Alignment, Background, Color, Element, Event, Length, Subscription, Task as Command, Theme,
     keyboard,
 };
+use layout::{LayoutMetrics, ScreenText, UserSizes};
 use pam_unix::Client;
-use std::sync::LazyLock;
+use std::{cell::RefCell, sync::LazyLock};
 use uzers::{get_current_uid, get_user_by_uid};
 
 use iced_exwlshell::sessionlock::application;
@@ -37,7 +41,7 @@ struct Args {
 
 fn main() -> Result<(), iced_exwlshell::Error> {
     let args = Args::parse();
-    let service: &'static str = Box::leak(args.pam.into_boxed_str());
+    let service = args.pam;
 
     if !std::path::Path::new(&format!("/etc/pam.d/{service}")).exists() {
         eprintln!("coldlock: PAM service '{service}' has no config in /etc/pam.d.");
@@ -45,7 +49,7 @@ fn main() -> Result<(), iced_exwlshell::Error> {
         std::process::exit(1);
     }
 
-    application(move || Lock::new(service), Lock::update, Lock::view)
+    application(move || Lock::new(service.clone()), Lock::update, Lock::view)
         .theme(Lock::theme)
         .subscription(Lock::subscription)
         .run()
@@ -59,7 +63,6 @@ struct Lock {
 #[to_sessionlock_message]
 #[derive(Debug, Clone)]
 enum Message {
-    NextPressed,
     Step(StepMessage),
     EnterEvent(Event),
     Tick,
@@ -67,7 +70,7 @@ enum Message {
 }
 
 impl Lock {
-    fn new(service: &'static str) -> (Self, Command<Message>) {
+    fn new(service: String) -> (Self, Command<Message>) {
         (
             Self {
                 steps: AuthSteps::new(service),
@@ -91,18 +94,13 @@ impl Lock {
 
     fn update(&mut self, message: Message) -> Command<Message> {
         match message {
-            Message::NextPressed => {
-                self.steps.advance();
-                iced::widget::operation::focus(INPUT_ID.clone())
-            }
-
             Message::EnterEvent(event) => match event {
                 Event::Keyboard(keyboard::Event::KeyPressed {
                     key: keyboard::Key::Named(key::Named::Enter),
                     ..
                 }) => {
-                    let message = Message::NextPressed;
-                    Command::perform(async { message }, |msg| msg)
+                    self.steps.advance();
+                    iced::widget::operation::focus(INPUT_ID.clone())
                 }
                 _ => Command::none(),
             },
@@ -132,29 +130,24 @@ struct AuthSteps {
 }
 
 impl AuthSteps {
-    fn new(service: &'static str) -> AuthSteps {
+    fn new(service: String) -> AuthSteps {
         let user = get_user_by_uid(get_current_uid()).unwrap();
-        let user_name = user.name().to_string_lossy().to_string().clone();
+        let user_name = user.name().to_string_lossy().into_owned();
         let icon_path = format!("/var/lib/AccountsService/icons/{user_name}");
-        let icon_path = std::path::Path::new(&icon_path);
-        let icon_handle = if icon_path.exists() {
-            if let Ok(data) = std::fs::read(icon_path) {
-                image::Handle::from_bytes(data)
-            } else {
-                ACCOUNT_DEFAULT_HANDLE.clone()
-            }
-        } else {
-            ACCOUNT_DEFAULT_HANDLE.clone()
+        let icon_handle = match std::fs::read(icon_path) {
+            Ok(data) => image::Handle::from_bytes(data),
+            Err(_) => ACCOUNT_DEFAULT_HANDLE.clone(),
         };
         Self {
             steps: vec![
                 AuthStep::Welcome {
                     icon_handle: icon_handle.clone(),
                     user_name: user_name.clone(),
+                    layouts: RefCell::default(),
                 },
                 AuthStep::Auth {
                     icon_handle,
-                    name: user_name.clone(),
+                    name: user_name,
                     password: String::new(),
                     auth_error: String::new(),
                     service,
@@ -187,13 +180,14 @@ enum AuthStep {
     Welcome {
         icon_handle: image::Handle,
         user_name: String,
+        layouts: RefCell<Vec<(iced::Size, LayoutMetrics)>>,
     },
     Auth {
         icon_handle: image::Handle,
         name: String,
         password: String,
         auth_error: String,
-        service: &'static str,
+        service: String,
     },
 }
 
@@ -238,11 +232,11 @@ impl<'a> AuthStep {
                 {
                     let name = name.clone();
                     let password = password.clone();
-                    let service = *service;
+                    let service = service.clone();
                     return Command::perform(
                         async move {
-                            let mut client =
-                                Client::with_password(service).expect("Failed to init PAM client.");
+                            let mut client = Client::with_password(&service)
+                                .expect("Failed to init PAM client.");
                             client.conversation_mut().set_credentials(&name, &password);
                             client.authenticate()
                         },
@@ -269,7 +263,8 @@ impl<'a> AuthStep {
             AuthStep::Welcome {
                 user_name,
                 icon_handle,
-            } => Self::welcome(user_name, icon_handle.clone()),
+                layouts,
+            } => Self::welcome(user_name, icon_handle.clone(), layouts),
             AuthStep::Auth {
                 name,
                 password,
@@ -280,52 +275,73 @@ impl<'a> AuthStep {
         }
     }
 
-    fn welcome(user_name: &'_ str, user_icon: image::Handle) -> Element<'_, StepMessage> {
-        let image = Image::new(IMAGE_B_HANDLE.clone())
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .content_fit(iced::ContentFit::Cover)
-            .opacity(10.0_f32);
-
+    fn welcome<'b>(
+        user_name: &'b str,
+        user_icon: image::Handle,
+        layouts: &'b RefCell<Vec<(iced::Size, LayoutMetrics)>>,
+    ) -> Element<'b, StepMessage> {
         let now = Local::now();
         let day = now.format("%A, %B %e").to_string();
         let time = now.format("%H:%M").to_string();
-        let col = column![
-            text(time)
-                .font(iced::Font {
-                    weight: iced::font::Weight::Bold,
-                    ..Default::default()
-                })
-                .size(75),
-            text(day)
-                .font(iced::Font {
-                    weight: iced::font::Weight::Bold,
-                    ..Default::default()
-                })
-                .size(35),
-            iced::widget::Space::new().height(70),
-            Image::new(user_icon)
-                .width(Length::Fixed(120.))
-                .height(Length::Fixed(120.)),
-            text(format!("Welcome {}", user_name)).size(35),
-            iced::widget::Space::new().height(30),
-            text("Press Enter to unlock").size(22)
-        ]
-        .padding(220)
-        .spacing(5)
-        .align_x(Alignment::Center)
-        .width(Length::Fill)
-        .height(Length::Fill);
-
-        let st = Stack::new()
-            .push(image)
-            .push(col)
-            .width(Length::Fill)
-            .height(Length::Fill);
-        container(st)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
+        let name = format!("Welcome {user_name}");
+        let foreground = responsive(move |size| {
+            let metrics = {
+                let mut layouts = layouts.borrow_mut();
+                if let Some((_, metrics)) = layouts.iter().find(|(surface, _)| *surface == size) {
+                    *metrics
+                } else {
+                    let metrics = layout::fit_layout(
+                        size,
+                        ScreenText::Welcome {
+                            name: &name,
+                            time: &time,
+                            date: &day,
+                        },
+                    );
+                    layouts.push((size, metrics));
+                    metrics
+                }
+            };
+            let sizes = UserSizes::new(metrics.scale);
+            let clock_block = column![
+                text(time.clone())
+                    .font(layout::BOLD)
+                    .size(75.0 * metrics.scale)
+                    .line_height(layout::LINE_HEIGHT)
+                    .wrapping(Wrapping::None),
+                text(day.clone())
+                    .font(layout::BOLD)
+                    .size(35.0 * metrics.scale)
+                    .line_height(layout::LINE_HEIGHT)
+                    .wrapping(Wrapping::None),
+            ]
+            .spacing(5.0 * metrics.scale)
+            .align_x(Alignment::Center);
+            let details = column![
+                Space::new().height(sizes.welcome_gap),
+                text(name.clone())
+                    .size(sizes.welcome_name_size)
+                    .line_height(layout::LINE_HEIGHT)
+                    .wrapping(Wrapping::WordOrGlyph)
+                    .align_x(Alignment::Center)
+                    .width(Length::Fill),
+                Space::new().height(sizes.hint_gap),
+                text(layout::WELCOME_HINT)
+                    .size(sizes.hint_size)
+                    .line_height(layout::LINE_HEIGHT)
+                    .wrapping(Wrapping::WordOrGlyph)
+                    .align_x(Alignment::Center)
+                    .width(Length::Fill),
+            ]
+            .width(Length::Fill);
+            Stack::new()
+                .push(group_at(metrics.clock_top, clock_block.into()))
+                .push(user_block(user_icon.clone(), metrics, details.into()))
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+        });
+        background(Image::new(IMAGE_B_HANDLE.clone()), foreground.into())
     }
 
     fn auth(
@@ -334,56 +350,102 @@ impl<'a> AuthStep {
         auth_error: &'a str,
         user_icon: image::Handle,
     ) -> Element<'a, StepMessage> {
-        let col = column![
-            Image::new(user_icon)
-                .width(Length::Fixed(120.))
-                .height(Length::Fixed(120.)),
-            text(name).size(45).font(iced::Font {
-                weight: iced::font::Weight::Bold,
-                ..Default::default()
-            }),
-            text_input("Enter password", password)
-                .padding(10)
-                .style(move |_theme, _status| text_input::Style {
-                    background: Background::Color(Color::from_rgb8(60, 60, 60)),
-                    border: iced::Border {
-                        color: Color::TRANSPARENT,
-                        width: 2.0,
-                        radius: 10.0.into()
-                    },
-                    icon: Color::TRANSPARENT,
-                    placeholder: Color::WHITE,
-                    value: Color::WHITE,
-                    selection: Color::from_rgb8(0, 150, 255)
-                })
-                .on_input(StepMessage::PasswordEntered)
-                .secure(true)
-                .id(INPUT_ID.clone())
-                .on_submit(StepMessage::Submit)
-                .width(Length::Fixed(320f32))
-                .size(30),
-            text(auth_error),
-        ]
-        .padding(350)
-        .spacing(40)
-        .align_x(Alignment::Center)
-        .width(Length::Fill)
-        .height(Length::Fill);
-
-        let image = Image::new(IMAGE_A_HANDLE.clone())
+        let foreground = responsive(move |size| {
+            let metrics = layout::fit_layout(
+                size,
+                ScreenText::Auth {
+                    name,
+                    error: auth_error,
+                },
+            );
+            let sizes = UserSizes::new(metrics.scale);
+            let scale = metrics.scale;
+            let mut details = column![
+                Space::new().height(sizes.auth_gap),
+                text(name)
+                    .size(sizes.auth_name_size)
+                    .font(layout::BOLD)
+                    .line_height(layout::LINE_HEIGHT)
+                    .wrapping(Wrapping::WordOrGlyph)
+                    .align_x(Alignment::Center)
+                    .width(Length::Fill),
+                Space::new().height(sizes.auth_gap),
+                text_input("Enter password", password)
+                    .padding(sizes.input_padding)
+                    .line_height(layout::LINE_HEIGHT)
+                    .style(move |_theme, _status| text_input::Style {
+                        background: Background::Color(Color::from_rgb8(60, 60, 60)),
+                        border: iced::Border {
+                            color: Color::TRANSPARENT,
+                            width: 2.0 * scale,
+                            radius: (10.0 * scale).into(),
+                        },
+                        icon: Color::TRANSPARENT,
+                        placeholder: Color::WHITE,
+                        value: Color::WHITE,
+                        selection: Color::from_rgb8(0, 150, 255),
+                    })
+                    .on_input(StepMessage::PasswordEntered)
+                    .secure(true)
+                    .id(INPUT_ID.clone())
+                    .on_submit(StepMessage::Submit)
+                    .width(sizes.input_width.min(metrics.details_width()))
+                    .size(sizes.input_size),
+            ]
             .width(Length::Fill)
-            .height(Length::Fill)
-            .content_fit(iced::ContentFit::Cover);
-
-        let st = Stack::new()
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .push(image)
-            .push(col);
-
-        container(st)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
+            .align_x(Alignment::Center);
+            if !auth_error.is_empty() {
+                details = details.push(Space::new().height(sizes.auth_gap)).push(
+                    text(auth_error)
+                        .size(sizes.error_size)
+                        .line_height(layout::LINE_HEIGHT)
+                        .wrapping(Wrapping::WordOrGlyph)
+                        .align_x(Alignment::Center)
+                        .width(Length::Fill),
+                );
+            }
+            user_block(user_icon.clone(), metrics, details.into())
+        });
+        background(Image::new(IMAGE_A_HANDLE.clone()), foreground.into())
     }
+}
+
+fn group_at(top: f32, content: Element<'_, StepMessage>) -> Element<'_, StepMessage> {
+    column![Space::new().height(top), content]
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .align_x(Alignment::Center)
+        .into()
+}
+
+fn user_block(
+    icon: image::Handle,
+    metrics: LayoutMetrics,
+    details: Element<'_, StepMessage>,
+) -> Element<'_, StepMessage> {
+    let group = column![
+        Image::new(icon)
+            .width(metrics.avatar_size)
+            .height(metrics.avatar_size),
+        container(details)
+            .padding([0.0, layout::DETAILS_PADDING])
+            .width(metrics.foreground_width)
+            .height(metrics.details_height),
+    ]
+    .align_x(Alignment::Center);
+    group_at(metrics.avatar_top, group.into())
+}
+
+fn background(image: Image, foreground: Element<'_, StepMessage>) -> Element<'_, StepMessage> {
+    Stack::new()
+        .push(
+            image
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .content_fit(iced::ContentFit::Cover),
+        )
+        .push(foreground)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
 }
